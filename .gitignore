@@ -1,0 +1,36 @@
+# Node
+node_modules
+
+# Environment
+.env
+.env.production
+.vercel
+.env.railway.example
+
+# Editor
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Python virtual env
+py-facial-rec/venv/
+
+# Build / output
+dist/
+
+# Logs
+*.log
+*.err
+analysis-output.txt
+
+# Dataset and binary artifacts
+py-facial-rec/dataset/
+py-facial-rec/*.whl
+
+# OS files
+.DS_Store
