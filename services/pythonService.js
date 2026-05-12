@@ -11,6 +11,8 @@ export const getBestPythonEmbedding = async (base64Images) => {
             ? [base64Images]
             : [];
 
+    console.log(PYTHON_URL);
+
     if (images.length === 0)
     {
         throw new Error("No images provided for face embedding");
@@ -26,10 +28,13 @@ export const getBestPythonEmbedding = async (base64Images) => {
 
     } catch (error)
     {
+        console.error("PYTHON ERROR:", error.message);
+        console.error(error.response?.data);
+
         throw new Error(
             error.response?.data?.detail ||
             error.response?.data?.error ||
-            "Python service error"
+            error.message
         );
     }
 };
@@ -39,6 +44,7 @@ export const getPythonEmbedding = async (base64Image) => {
         ? base64Image[0]
         : base64Image;
 
+    console.log("PYTHON_URL:", PYTHON_URL);
     if (!image || typeof image !== "string")
     {
         throw new Error("No image provided for face embedding");
@@ -53,10 +59,13 @@ export const getPythonEmbedding = async (base64Image) => {
 
     } catch (error)
     {
+        console.error("PYTHON ERROR:", error.message);
+        console.error(error.response?.data);
+
         throw new Error(
             error.response?.data?.detail ||
             error.response?.data?.error ||
-            "Python service error"
+            error.message
         );
     }
 };
