@@ -1,50 +1,38 @@
 import jwt from "jsonwebtoken";
 import asyncHandler from "express-async-handler";
 import Admin from "../models/adminModel.js";
-import { cookieName } from "../controllers/adminController.js";
-
-const getCookieValue = (req, name) => {
-    const cookies = req.headers.cookie;
-
-    if (!cookies)
-    {
-        return null;
-    }
-
-    return cookies
-        .split(";")
-        .map((cookie) => cookie.trim())
-        .find((cookie) => cookie.startsWith(`${name}=`))
-        ?.split("=")[1] || null;
-};
 
 const protect = asyncHandler(async (req, res, next) => {
-    const token = getCookieValue(req, cookieName);
+    const token = req.cookies?.adminToken;
 
-    if (token)
+    if (!token)
     {
-        try
+        return res.status(401).json({
+            message: "Not authorized, no session"
+        });
+    }
+
+    try
+    {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        const admin = await Admin.findById(decoded.id).select("-password");
+
+        if (!admin)
         {
-            // Verify token
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-            // Get admin from the token
-            req.admin = await Admin.findById(decoded.id).select('-password');
-
-            if (!req.admin)
-            {
-                return res.status(401).json({ message: 'Not authorized, admin not found' });
-            }
-
-            next();
-        } catch (error)
-        {
-            console.error(error);
-            return res.status(401).json({ message: 'Not authorized, session failed' });
+            return res.status(401).json({
+                message: "Not authorized, admin not found"
+            });
         }
-    } else
+
+        req.admin = admin;
+        next();
+
+    } catch (error)
     {
-        return res.status(401).json({ message: 'Not authorized, no session' });
+        return res.status(401).json({
+            message: "Not authorized, session failed"
+        });
     }
 });
 
