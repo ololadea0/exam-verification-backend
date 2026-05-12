@@ -1,117 +1,58 @@
 import Student from "../models/studentModel.js";
 import asyncHandler from "express-async-handler";
-import { decrypt, encrypt } from "../utils/encryption.js";
+import { encrypt, decrypt } from "../utils/encryption.js";
 import { getBestPythonEmbedding } from "../services/pythonService.js";
 import { cosineSimilarity } from "../utils/math.js";
 
-const FACE_CAPTURE_ERROR = "Face capture is not clear enough. Please retake the photo with one visible face and good lighting.";
-const FACE_SERVICE_ERROR = "Face recognition service is not ready. Please check the server logs.";
+const FACE_CAPTURE_ERROR =
+    "Face capture is unclear. Ensure good lighting and one visible face.";
+
+const FACE_SERVICE_ERROR =
+    "Face service unavailable. Try again later.";
+
 const SIMILARITY_THRESHOLD = 0.72;
 const MIN_MARGIN = 0.05;
-const STUDENT_PUBLIC_FIELDS = "-embedding -iv";
-const DEFAULT_PAGE_LIMIT = 25;
-const MAX_PAGE_LIMIT = 100;
 
-const isFaceServiceError = (error) => {
-    const message = error?.message || "";
+const hasValidIv = (iv) =>
+    typeof iv === "string" &&
+    iv.length === 32 &&
+    /^[a-fA-F0-9]+$/.test(iv);
 
-    return message.includes("Traceback")
-        || message.includes("ModuleNotFoundError")
-        || message.includes("ImportError")
-        || message.includes("Unable to start Python embedding process")
-        || message.includes("Failed to parse Python JSON")
-        || message.includes("Python process timed out")
-        || message.includes("spawn")
-        || message.includes("ENOENT")
-        || message.includes("Python embedding script was not found");
+const isFaceServiceError = (msg = "") =>
+    [
+        "Traceback",
+        "ModuleNotFoundError",
+        "ImportError",
+        "ECONNREFUSED",
+        "timeout",
+        "spawn",
+        "ENOENT"
+    ].some((err) => msg.includes(err));
+
+const normalizeError = (msg = "") => {
+    const m = msg.toLowerCase();
+
+    if (m.includes("no face")) return "No face detected.";
+    if (m.includes("blurry")) return "Image is blurry.";
+    if (m.includes("lighting")) return "Poor lighting.";
+    if (m.includes("multiple")) return "Only one face allowed.";
+    if (m.includes("small")) return "Move closer to camera.";
+    if (m.includes("close")) return "Move slightly away.";
+
+    return FACE_CAPTURE_ERROR;
 };
 
-const getPagination = (query) => {
-    const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
-    const requestedLimit = Number.parseInt(query.limit, 10) || DEFAULT_PAGE_LIMIT;
-    const limit = Math.min(Math.max(requestedLimit, 1), MAX_PAGE_LIMIT);
-    const skip = (page - 1) * limit;
-
-    return { page, limit, skip };
-};
-
-const getPublicStudentById = (id) =>
-    Student.findById(id).select(STUDENT_PUBLIC_FIELDS);
-
-const hasValidIv = (iv) => typeof iv === "string"
-    && iv.length === 32
-    && /^[0-9a-fA-F]+$/.test(iv);
-
-const findMatchingFaceStudent = async (embedding, excludeStudentId = null) => {
-    const students = await Student.find({}, "name matric_number embedding iv");
-
-    let best = null;
-    let secondBest = null;
-
-    for (const student of students)
-    {
-
-        if (excludeStudentId && student._id.toString() === excludeStudentId.toString())
-        {
-            continue;
-        }
-
-        if (!hasValidIv(student.iv)) continue;
-
-        let stored;
-
-        try
-        {
-            stored = JSON.parse(decrypt(student.embedding, student.iv));
-        } catch
-        {
-            continue;
-        }
-
-        if (!Array.isArray(stored) || stored.length !== embedding.length) continue;
-
-        const sim = cosineSimilarity(stored, embedding);
-
-        if (!best || sim > best.similarity)
-        {
-            secondBest = best;
-            best = { student, similarity: sim };
-        } else if (!secondBest || sim > secondBest.similarity)
-        {
-            secondBest = { student, similarity: sim };
-        }
-    }
-
-    if (!best || best.similarity < SIMILARITY_THRESHOLD)
-    {
-        return null;
-    }
-
-    const margin = secondBest ? best.similarity - secondBest.similarity : 1;
-
-    if (margin < MIN_MARGIN)
-    {
-        return {
-            ambiguous: true,
-            best,
-            secondBest,
-            margin
-        };
-    }
-
-    return {
-        student: best.student,
-        similarity: best.similarity
-    };
-};
-
-// POST /api/students
+// ------------------------------
+// MAIN REGISTER
+// ------------------------------
 const registerStudent = asyncHandler(async (req, res) => {
+
     const { name, matric_number, department, image, images, phone_number } = req.body;
 
-    const captureImages = Array.isArray(images) && images.length > 0
-        ? images
-        : [image].filter(Boolean);
+    const captureImages =
+        Array.isArray(images) && images.length > 0
+            ? images
+            : [image].filter(Boolean);
 
     if (!name || !matric_number || !department || captureImages.length === 0)
     {
@@ -120,31 +61,40 @@ const registerStudent = asyncHandler(async (req, res) => {
         });
     }
 
-    const trimmedMatric = matric_number.trim();
+    const matric = matric_number.trim();
 
-    const studentExists = await Student.findOne({ matric_number: trimmedMatric });
+    const exists = await Student.findOne({ matric_number: matric });
 
-    if (studentExists)
+    if (exists)
     {
         return res.status(400).json({
             message: "Student already exists"
         });
     }
 
+    // ------------------------------
+    // PYTHON EMBEDDING
+    // ------------------------------
     let result;
 
     try
     {
         result = await getBestPythonEmbedding(captureImages);
+
     } catch (error)
     {
-        const serviceError = isFaceServiceError(error);
+
+        const msg = error?.message || "";
+        const serviceError = isFaceServiceError(msg);
 
         return res.status(serviceError ? 500 : 400).json({
             message: serviceError
                 ? FACE_SERVICE_ERROR
-                : error.message || FACE_CAPTURE_ERROR,
-            details: serviceError ? undefined : error.message
+                : normalizeError(msg),
+            debug:
+                process.env.NODE_ENV !== "production"
+                    ? msg
+                    : undefined
         });
     }
 
@@ -157,35 +107,78 @@ const registerStudent = asyncHandler(async (req, res) => {
         });
     }
 
-    const match = await findMatchingFaceStudent(embedding);
+    // ------------------------------
+    // FACE MATCH CHECK
+    // ------------------------------
+    const students = await Student.find({}, "name matric_number embedding iv");
 
-    if (match)
+    let best = null;
+    let secondBest = null;
+
+    for (const s of students)
     {
-        if (match.ambiguous)
+
+        if (!hasValidIv(s.iv)) continue;
+
+        try
+        {
+            const stored = JSON.parse(decrypt(s.embedding, s.iv));
+
+            if (!Array.isArray(stored)) continue;
+            if (stored.length !== embedding.length) continue;
+
+            const sim = cosineSimilarity(stored, embedding);
+
+            if (!best || sim > best.similarity)
+            {
+                secondBest = best;
+                best = { student: s, similarity: sim };
+            } else if (!secondBest || sim > secondBest.similarity)
+            {
+                secondBest = { student: s, similarity: sim };
+            }
+
+        } catch
+        {
+            continue;
+        }
+    }
+
+    if (best && best.similarity >= SIMILARITY_THRESHOLD)
+    {
+
+        const margin =
+            best.similarity - (secondBest?.similarity || 0);
+
+        if (margin < MIN_MARGIN)
         {
             return res.status(409).json({
-                message: "Face is too similar to multiple existing students. Please retake clearer images.",
-                topMatch: match.best.student.name,
-                secondMatch: match.secondBest.student.name,
-                margin: match.margin
+                message: "Face matches multiple students. Retake clearer image.",
+                topMatch: best.student.name,
+                secondMatch: secondBest?.student.name,
+                margin
             });
         }
 
         return res.status(409).json({
-            message: `This face already belongs to ${match.student.name} (${match.student.matric_number})`,
+            message: `Face already registered for ${best.student.name}`,
             matchedStudent: {
-                name: match.student.name,
-                matric_number: match.student.matric_number
+                name: best.student.name,
+                matric_number: best.student.matric_number
             },
-            similarity: match.similarity
+            similarity: best.similarity
         });
     }
 
-    const { encryptedEmbedding, iv } = encrypt(JSON.stringify(embedding));
+    // ------------------------------
+    // SAVE NEW STUDENT
+    // ------------------------------
+    const { encryptedEmbedding, iv } =
+        encrypt(JSON.stringify(embedding));
 
     const student = await Student.create({
         name,
-        matric_number: trimmedMatric,
+        matric_number: matric,
         department,
         phone_number,
         embedding: encryptedEmbedding,
@@ -194,7 +187,13 @@ const registerStudent = asyncHandler(async (req, res) => {
 
     return res.status(201).json({
         message: "Student registered successfully",
-        student: await getPublicStudentById(student._id)
+        student: {
+            _id: student._id,
+            name: student.name,
+            matric_number: student.matric_number,
+            department: student.department,
+            phone_number: student.phone_number
+        }
     });
 });
 // @desc Edit student data

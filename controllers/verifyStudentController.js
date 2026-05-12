@@ -5,172 +5,329 @@ import { decrypt } from "../utils/encryption.js";
 import { cosineSimilarity } from "../utils/math.js";
 import { getPythonEmbedding } from "../services/pythonService.js";
 
-const hasValidIv = (iv) => typeof iv === "string"
-    && iv.length === 32
-    && /^[0-9a-fA-F]+$/.test(iv);
-
-const FACE_CAPTURE_ERROR = "Face capture is not clear enough. Please retake the photo with one visible face and good lighting.";
-const FACE_SERVICE_ERROR = "Face recognition service is not ready. Please check the server logs.";
 const SIMILARITY_THRESHOLD = 0.65;
-const MIN_MARGIN = 0.05;
+const MIN_MARGIN = 0.04;
 
-const isFaceServiceError = (error) => {
-    const message = error?.message || "";
+const FACE_SERVICE_ERROR =
+    "Face recognition service is currently unavailable.";
 
-    return message.includes("Traceback")
-        || message.includes("ModuleNotFoundError")
-        || message.includes("ImportError")
-        || message.includes("Unable to start Python embedding process")
-        || message.includes("Python embedding script was not found");
+const hasValidIv = (iv) =>
+    typeof iv === "string" &&
+    iv.length === 32 &&
+    /^[0-9a-fA-F]+$/.test(iv);
+
+const isFaceServiceError = (message = "") => {
+    return (
+        message.includes("Traceback") ||
+        message.includes("ModuleNotFoundError") ||
+        message.includes("ImportError") ||
+        message.includes("Connection refused") ||
+        message.includes("ECONNREFUSED") ||
+        message.includes("timeout") ||
+        message.includes("Network Error")
+    );
+};
+
+const getReadableFaceError = (message = "") => {
+
+    const lower = message.toLowerCase();
+
+    if (lower.includes("no face detected"))
+    {
+        return "No face detected. Ensure your face is fully visible.";
+    }
+
+    if (lower.includes("face too small"))
+    {
+        return "Move closer to the camera.";
+    }
+
+    if (lower.includes("face too close"))
+    {
+        return "Move slightly away from the camera.";
+    }
+
+    if (lower.includes("blurry"))
+    {
+        return "Image is blurry. Hold the camera steady.";
+    }
+
+    if (lower.includes("lighting"))
+    {
+        return "Lighting is too poor for recognition.";
+    }
+
+    if (lower.includes("confidence"))
+    {
+        return "Face could not be detected clearly.";
+    }
+
+    if (lower.includes("multiple faces"))
+    {
+        return "Only one face should appear in the frame.";
+    }
+
+    if (lower.includes("invalid image"))
+    {
+        return "Captured image is invalid.";
+    }
+
+    return "Face capture failed. Please retake the photo.";
 };
 
 const verifyStudent = asyncHandler(async (req, res) => {
+
     const { matric_number, image } = req.body;
 
+    // -----------------------------
+    // VALIDATE REQUEST
+    // -----------------------------
     if (!matric_number || !image)
     {
         return res.status(400).json({
-            message: "Matric number and image required"
+            message: "Matric number and image are required."
         });
     }
 
     const matric = matric_number.trim();
 
-    // 1. find student
-    const student = await Student.findOne({ matric_number: matric });
+    // -----------------------------
+    // FIND STUDENT
+    // -----------------------------
+    const student = await Student.findOne({
+        matric_number: matric
+    });
 
     if (!student)
     {
-        return res.status(404).json({ message: "Student not found" });
+        return res.status(404).json({
+            message: "Student not found."
+        });
     }
 
-    // 2. get embedding from python
+    // -----------------------------
+    // GET LIVE EMBEDDING
+    // -----------------------------
     let embeddingResult;
 
     try
     {
+
         embeddingResult = await getPythonEmbedding(image);
+
     } catch (error)
     {
-        console.error("Face verification embedding failed:", error.message);
-        const serviceError = isFaceServiceError(error);
+
+        console.error("PYTHON FACE ERROR:");
+        console.error(error.message);
+
+        const rawMessage = error?.message || "";
+
+        const serviceError = isFaceServiceError(rawMessage);
 
         return res.status(serviceError ? 500 : 400).json({
 
             message: serviceError
                 ? FACE_SERVICE_ERROR
-                : error.message || FACE_CAPTURE_ERROR,
+                : getReadableFaceError(rawMessage),
 
-            details: serviceError
-                ? undefined
-                : error.message
+            debug:
+                process.env.NODE_ENV !== "production"
+                    ? rawMessage
+                    : undefined
         });
     }
 
-    if (!Array.isArray(embeddingResult?.embedding) || embeddingResult.embedding.length === 0)
+    // -----------------------------
+    // VALIDATE EMBEDDING
+    // -----------------------------
+    if (
+        !Array.isArray(embeddingResult?.embedding) ||
+        embeddingResult.embedding.length === 0
+    )
     {
         return res.status(400).json({
-            message: FACE_CAPTURE_ERROR
+            message: "Face embedding generation failed."
         });
     }
 
     const liveEmbedding = embeddingResult.embedding;
 
-    // 3. decrypt stored embedding
-
+    // -----------------------------
+    // VALIDATE ENCRYPTED DATA
+    // -----------------------------
     if (!hasValidIv(student.iv))
     {
+
         return res.status(422).json({
-            message: "Student face data is invalid. Please re-register this student."
+            message:
+                "Student biometric data is invalid. Re-register student."
         });
     }
 
+    // -----------------------------
+    // DECRYPT STORED EMBEDDING
+    // -----------------------------
     let storedEmbedding;
 
     try
     {
+
         storedEmbedding = JSON.parse(
             decrypt(student.embedding, student.iv)
         );
-    } catch
+
+    } catch (error)
     {
+
+        console.error("DECRYPT ERROR:", error.message);
+
         return res.status(422).json({
-            message: "Student face data cannot be decrypted. Please re-register this student's face."
+            message:
+                "Stored biometric data could not be decrypted."
         });
     }
 
-    if (!Array.isArray(storedEmbedding) || storedEmbedding.length !== liveEmbedding.length)
+    // -----------------------------
+    // VALIDATE STORED EMBEDDING
+    // -----------------------------
+    if (
+        !Array.isArray(storedEmbedding) ||
+        storedEmbedding.length !== liveEmbedding.length
+    )
     {
         return res.status(422).json({
-            message: "Student face data is incompatible. Please re-register this student."
+            message:
+                "Stored biometric data is incompatible."
         });
     }
 
-    // 4. compare against requested student
-    const similarity = cosineSimilarity(storedEmbedding, liveEmbedding);
+    // -----------------------------
+    // MAIN SIMILARITY
+    // -----------------------------
+    const similarity = cosineSimilarity(
+        storedEmbedding,
+        liveEmbedding
+    );
 
-    // 5. also check all other students to detect ambiguous matches
-    const allStudents = await Student.find({}, "name matric_number embedding iv");
-    const allScores = [];
+    // -----------------------------
+    // AMBIGUITY CHECK
+    // -----------------------------
+    const allStudents = await Student.find(
+        {},
+        "name matric_number embedding iv"
+    );
+
+    const competingScores = [];
 
     for (const s of allStudents)
     {
-        if (!hasValidIv(s.iv) || s._id.toString() === student._id.toString())
+
+        if (
+            s._id.toString() === student._id.toString() ||
+            !hasValidIv(s.iv)
+        )
         {
             continue;
         }
 
         try
         {
-            const stored = JSON.parse(decrypt(s.embedding, s.iv));
-            if (Array.isArray(stored) && stored.length === liveEmbedding.length)
+
+            const decrypted = JSON.parse(
+                decrypt(s.embedding, s.iv)
+            );
+
+            if (
+                Array.isArray(decrypted) &&
+                decrypted.length === liveEmbedding.length
+            )
             {
-                allScores.push({
-                    studentId: s._id.toString(),
+
+                const score = cosineSimilarity(
+                    decrypted,
+                    liveEmbedding
+                );
+
+                competingScores.push({
+                    studentId: s._id,
                     name: s.name,
-                    matric: s.matric_number,
-                    similarity: cosineSimilarity(stored, liveEmbedding)
+                    matric_number: s.matric_number,
+                    similarity: score
                 });
             }
+
         } catch
         {
             continue;
         }
     }
 
-    allScores.sort((a, b) => b.similarity - a.similarity);
+    competingScores.sort(
+        (a, b) => b.similarity - a.similarity
+    );
 
-    const bestMatch = allScores[0];
+    const closestMatch = competingScores[0];
 
-    const secondBestSimilarity = bestMatch
-        ? bestMatch.similarity
-        : 0;
+    const secondBestSimilarity =
+        closestMatch?.similarity || 0;
 
-    const margin = similarity - secondBestSimilarity;
+    const margin =
+        similarity - secondBestSimilarity;
 
-    const match =
-        similarity >= SIMILARITY_THRESHOLD
-        && margin >= MIN_MARGIN;
+    // -----------------------------
+    // FINAL MATCH DECISION
+    // -----------------------------
+    const verified =
+        similarity >= SIMILARITY_THRESHOLD &&
+        margin >= MIN_MARGIN;
 
     const confidence = Math.max(0, similarity);
 
-    // 6. log
-    await Log.create({
-        student: student._id,
-        timestamp: new Date(),
-        status: match ? "success" : "failure",
-        matric_number: student.matric_number,
-        verified: match,
-        confidence,
-        method: "facial_recognition"
-    });
+    // -----------------------------
+    // LOG ATTEMPT
+    // -----------------------------
+    try
+    {
 
-    // 7. response
+        await Log.create({
+            student: student._id,
+            timestamp: new Date(),
+            status: verified ? "success" : "failure",
+            matric_number: student.matric_number,
+            verified,
+            confidence,
+            similarity,
+            method: "facial_recognition"
+        });
+
+    } catch (error)
+    {
+
+        console.error("LOG ERROR:", error.message);
+    }
+
+    // -----------------------------
+    // RESPONSE
+    // -----------------------------
     return res.json({
-        verified: match,
+
+        verified,
+
         confidence,
+
         similarity,
-        ...(bestMatch && bestMatch.similarity > 0.6 ? { ambiguityWarning: `Face is also similar to ${bestMatch.name}` } : {}),
+
+        margin,
+
+        metrics: embeddingResult.metrics,
+
+        ambiguityWarning:
+            closestMatch &&
+                closestMatch.similarity > 0.55
+                ? `Face also resembles ${closestMatch.name}`
+                : undefined,
+
         student: {
             name: student.name,
             matric_number: student.matric_number,
