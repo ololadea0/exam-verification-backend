@@ -36,7 +36,7 @@ const __dirname = path.dirname(__filename);
 const port = process.env.PORT || 8000;
 
 const app = express();
-console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
+
 
 
 const allowedOrigins = [
@@ -44,7 +44,7 @@ const allowedOrigins = [
     process.env.FRONTEND_URL
 ];
 
-console.log("Allowed Origins:", allowedOrigins);
+
 
 app.use(cors({
     origin: function (origin, callback) {
