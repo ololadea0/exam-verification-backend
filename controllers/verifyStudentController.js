@@ -6,7 +6,6 @@ import { cosineSimilarity } from "../utils/math.js";
 import { getPythonEmbedding } from "../services/pythonService.js";
 
 const SIMILARITY_THRESHOLD = 0.65;
-const MIN_MARGIN = 0.04;
 
 const FACE_SERVICE_ERROR =
     "Face recognition service is currently unavailable.";
@@ -146,8 +145,17 @@ const verifyStudent = asyncHandler(async (req, res) => {
         embeddingResult.embedding.length === 0
     )
     {
+        const rawMessage =
+            embeddingResult?.error ||
+            embeddingResult?.detail ||
+            "Face embedding generation failed";
+
         return res.status(400).json({
-            message: "Face embedding generation failed."
+            message: getReadableFaceError(rawMessage),
+            debug:
+                process.env.NODE_ENV !== "production"
+                    ? rawMessage
+                    : undefined
         });
     }
 
@@ -211,76 +219,9 @@ const verifyStudent = asyncHandler(async (req, res) => {
     );
 
     // -----------------------------
-    // AMBIGUITY CHECK
-    // -----------------------------
-    const allStudents = await Student.find(
-        {},
-        "name matric_number embedding iv"
-    );
-
-    const competingScores = [];
-
-    for (const s of allStudents)
-    {
-
-        if (
-            s._id.toString() === student._id.toString() ||
-            !hasValidIv(s.iv)
-        )
-        {
-            continue;
-        }
-
-        try
-        {
-
-            const decrypted = JSON.parse(
-                decrypt(s.embedding, s.iv)
-            );
-
-            if (
-                Array.isArray(decrypted) &&
-                decrypted.length === liveEmbedding.length
-            )
-            {
-
-                const score = cosineSimilarity(
-                    decrypted,
-                    liveEmbedding
-                );
-
-                competingScores.push({
-                    studentId: s._id,
-                    name: s.name,
-                    matric_number: s.matric_number,
-                    similarity: score
-                });
-            }
-
-        } catch
-        {
-            continue;
-        }
-    }
-
-    competingScores.sort(
-        (a, b) => b.similarity - a.similarity
-    );
-
-    const closestMatch = competingScores[0];
-
-    const secondBestSimilarity =
-        closestMatch?.similarity || 0;
-
-    const margin =
-        similarity - secondBestSimilarity;
-
-    // -----------------------------
     // FINAL MATCH DECISION
     // -----------------------------
-    const verified =
-        similarity >= SIMILARITY_THRESHOLD &&
-        margin >= MIN_MARGIN;
+    const verified = similarity >= SIMILARITY_THRESHOLD;
 
     const confidence = Math.max(0, similarity);
 
@@ -318,15 +259,7 @@ const verifyStudent = asyncHandler(async (req, res) => {
 
         similarity,
 
-        margin,
-
         metrics: embeddingResult.metrics,
-
-        ambiguityWarning:
-            closestMatch &&
-                closestMatch.similarity > 0.55
-                ? `Face also resembles ${closestMatch.name}`
-                : undefined,
 
         student: {
             name: student.name,

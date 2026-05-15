@@ -10,14 +10,25 @@ const FACE_CAPTURE_ERROR =
 const FACE_SERVICE_ERROR =
     "Face service unavailable. Try again later.";
 
-const SIMILARITY_THRESHOLD = 0.72;
-const MIN_MARGIN = 0.05;
+const ENROLLMENT_DUPLICATE_THRESHOLD = 0.65;
+const DEFAULT_PAGE_LIMIT = 25;
+const MAX_PAGE_LIMIT = 100;
+const STUDENT_PUBLIC_FIELDS = "-embedding -iv";
 
 const hasValidIv = (iv) =>
     typeof iv === "string" &&
     iv.length === 32 &&
     /^[a-fA-F0-9]+$/.test(iv);
 
+
+const getPagination = (query) => {
+    const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
+    const requestedLimit = Number.parseInt(query.limit, 10) || DEFAULT_PAGE_LIMIT;
+    const limit = Math.min(Math.max(requestedLimit, 1), MAX_PAGE_LIMIT);
+    const skip = (page - 1) * limit;
+
+    return { page, limit, skip };
+};
 const isFaceServiceError = (msg = "") =>
     [
         "Traceback",
@@ -40,6 +51,51 @@ const normalizeError = (msg = "") => {
     if (m.includes("close")) return "Move slightly away.";
 
     return FACE_CAPTURE_ERROR;
+};
+
+const getPublicStudentById = (studentId) =>
+    Student.findById(studentId).select(STUDENT_PUBLIC_FIELDS);
+
+const findMatchingFaceStudent = async (embedding, excludedStudentId = null) => {
+    const students = await Student.find({}, "name matric_number embedding iv");
+    let best = null;
+
+    for (const student of students)
+    {
+        if (
+            excludedStudentId &&
+            student._id.toString() === excludedStudentId.toString()
+        )
+        {
+            continue;
+        }
+
+        if (!hasValidIv(student.iv)) continue;
+
+        try
+        {
+            const stored = JSON.parse(decrypt(student.embedding, student.iv));
+
+            if (!Array.isArray(stored) || stored.length !== embedding.length)
+            {
+                continue;
+            }
+
+            const similarity = cosineSimilarity(stored, embedding);
+
+            if (!best || similarity > best.similarity)
+            {
+                best = { student, similarity };
+            }
+        } catch
+        {
+            continue;
+        }
+    }
+
+    return best && best.similarity >= ENROLLMENT_DUPLICATE_THRESHOLD
+        ? best
+        : null;
 };
 
 // ------------------------------
@@ -107,66 +163,17 @@ const registerStudent = asyncHandler(async (req, res) => {
         });
     }
 
-    // ------------------------------
-    // FACE MATCH CHECK
-    // ------------------------------
-    const students = await Student.find({}, "name matric_number embedding iv");
+    const matchingFace = await findMatchingFaceStudent(embedding);
 
-    let best = null;
-    let secondBest = null;
-
-    for (const s of students)
+    if (matchingFace)
     {
-
-        if (!hasValidIv(s.iv)) continue;
-
-        try
-        {
-            const stored = JSON.parse(decrypt(s.embedding, s.iv));
-
-            if (!Array.isArray(stored)) continue;
-            if (stored.length !== embedding.length) continue;
-
-            const sim = cosineSimilarity(stored, embedding);
-
-            if (!best || sim > best.similarity)
-            {
-                secondBest = best;
-                best = { student: s, similarity: sim };
-            } else if (!secondBest || sim > secondBest.similarity)
-            {
-                secondBest = { student: s, similarity: sim };
-            }
-
-        } catch
-        {
-            continue;
-        }
-    }
-
-    if (best && best.similarity >= SIMILARITY_THRESHOLD)
-    {
-
-        const margin =
-            best.similarity - (secondBest?.similarity || 0);
-
-        if (margin < MIN_MARGIN)
-        {
-            return res.status(409).json({
-                message: "Face matches multiple students. Retake clearer image.",
-                topMatch: best.student.name,
-                secondMatch: secondBest?.student.name,
-                margin
-            });
-        }
-
         return res.status(409).json({
-            message: `Face already registered for ${best.student.name}`,
+            message: `Face already registered for ${matchingFace.student.name}`,
             matchedStudent: {
-                name: best.student.name,
-                matric_number: best.student.matric_number
+                name: matchingFace.student.name,
+                matric_number: matchingFace.student.matric_number
             },
-            similarity: best.similarity
+            similarity: matchingFace.similarity
         });
     }
 
@@ -257,17 +264,18 @@ const updateStudentFace = asyncHandler(async (req, res) => {
     } catch (error)
     {
         console.error("Student face re-registration embedding failed:", error.message);
-        const serviceError = isFaceServiceError(error);
+        const msg = error?.message || "";
+        const serviceError = isFaceServiceError(msg);
 
         return res.status(serviceError ? 500 : 400).json({
 
             message: serviceError
                 ? FACE_SERVICE_ERROR
-                : error.message || FACE_CAPTURE_ERROR,
+                : normalizeError(msg),
 
             details: serviceError
                 ? undefined
-                : error.message
+                : msg
         });
     }
 
@@ -282,16 +290,6 @@ const updateStudentFace = asyncHandler(async (req, res) => {
 
     if (matchingFace)
     {
-        if (matchingFace.ambiguous)
-        {
-            return res.status(409).json({
-                message: `Face is ambiguous. It matches multiple students. Margin: ${matchingFace.margin.toFixed(4)}. Please retake with clearer image.`,
-                topMatch: matchingFace.best.student.name,
-                secondMatch: matchingFace.secondBest.student.name,
-                margin: matchingFace.margin
-            });
-        }
-
         return res.status(409).json({
             message: `This face is already enrolled for ${matchingFace.student.name} (${matchingFace.student.matric_number}).`,
             matchedStudent: {

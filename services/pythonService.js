@@ -2,7 +2,43 @@
 
 import axios from "axios";
 
-const PYTHON_URL = process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
+const PYTHON_URL = (
+    process.env.PYTHON_SERVICE_URL || "http://localhost:8000"
+).replace(/\/+$/, "");
+
+const getPythonErrorMessage = (data, fallback) => {
+    if (!data)
+    {
+        return fallback;
+    }
+
+    if (typeof data.detail === "string" && data.error)
+    {
+        return data.error;
+    }
+
+    if (typeof data.error === "string")
+    {
+        return data.error;
+    }
+
+    if (typeof data.detail === "string")
+    {
+        return data.detail;
+    }
+
+    if (Array.isArray(data.candidates))
+    {
+        const candidateError = data.candidates.find((candidate) => candidate.error)?.error;
+
+        if (candidateError)
+        {
+            return candidateError;
+        }
+    }
+
+    return fallback;
+};
 
 export const getBestPythonEmbedding = async (base64Images) => {
     const images = Array.isArray(base64Images)
@@ -24,6 +60,11 @@ export const getBestPythonEmbedding = async (base64Images) => {
             images
         });
 
+        if (res.data?.error || !Array.isArray(res.data?.embedding))
+        {
+            throw new Error(getPythonErrorMessage(res.data, "Face embedding generation failed"));
+        }
+
         return res.data;
 
     } catch (error)
@@ -32,8 +73,7 @@ export const getBestPythonEmbedding = async (base64Images) => {
         console.error(error.response?.data);
 
         throw new Error(
-            error.response?.data?.detail ||
-            error.response?.data?.error ||
+            getPythonErrorMessage(error.response?.data, error.message) ||
             error.message
         );
     }
@@ -55,6 +95,12 @@ export const getPythonEmbedding = async (base64Image) => {
         const res = await axios.post(`${PYTHON_URL}/embed`, {
             image
         });
+
+        if (res.data?.error || !Array.isArray(res.data?.embedding))
+        {
+            throw new Error(getPythonErrorMessage(res.data, "Face embedding generation failed"));
+        }
+
         return res.data;
 
     } catch (error)
@@ -63,8 +109,7 @@ export const getPythonEmbedding = async (base64Image) => {
         console.error(error.response?.data);
 
         throw new Error(
-            error.response?.data?.detail ||
-            error.response?.data?.error ||
+            getPythonErrorMessage(error.response?.data, error.message) ||
             error.message
         );
     }
