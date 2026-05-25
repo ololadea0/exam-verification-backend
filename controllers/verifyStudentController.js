@@ -1,11 +1,16 @@
 import asyncHandler from "express-async-handler";
 import Student from "../models/studentModel.js";
 import Log from "../models/logModel.js";
+import Attendance from "../models/attendanceModel.js";
 import { decrypt } from "../utils/encryption.js";
 import { cosineSimilarity } from "../utils/math.js";
 import { getPythonEmbedding } from "../services/pythonService.js";
 
 const SIMILARITY_THRESHOLD = 0.65;
+const MAX_VERIFICATION_TIME_MS = Number.parseInt(
+    process.env.MAX_VERIFICATION_TIME_MS || "10000",
+    10
+);
 
 const FACE_SERVICE_ERROR =
     "Face recognition service is currently unavailable.";
@@ -74,7 +79,10 @@ const getReadableFaceError = (message = "") => {
     return "Face capture failed. Please retake the photo.";
 };
 
+const getAttendanceDate = () => new Date().toISOString().slice(0, 10);
+
 const verifyStudent = asyncHandler(async (req, res) => {
+    const startedAt = Date.now();
 
     const { matric_number, image } = req.body;
 
@@ -160,6 +168,15 @@ const verifyStudent = asyncHandler(async (req, res) => {
     }
 
     const liveEmbedding = embeddingResult.embedding;
+    const elapsedAfterEmbedding = Date.now() - startedAt;
+
+    if (elapsedAfterEmbedding > MAX_VERIFICATION_TIME_MS)
+    {
+        return res.status(504).json({
+            message: "Verification exceeded the allowed processing time. Please try again.",
+            durationMs: elapsedAfterEmbedding
+        });
+    }
 
     // -----------------------------
     // VALIDATE ENCRYPTED DATA
@@ -224,6 +241,7 @@ const verifyStudent = asyncHandler(async (req, res) => {
     const verified = similarity >= SIMILARITY_THRESHOLD;
 
     const confidence = Math.max(0, similarity);
+    let attendance = null;
 
     // -----------------------------
     // LOG ATTEMPT
@@ -248,18 +266,78 @@ const verifyStudent = asyncHandler(async (req, res) => {
         console.error("LOG ERROR:", error.message);
     }
 
+    if (verified)
+    {
+        try
+        {
+            const attendanceDate = getAttendanceDate();
+            const existingAttendance = await Attendance.findOne({
+                student: student._id,
+                attendance_date: attendanceDate
+            });
+
+            if (existingAttendance)
+            {
+                attendance = {
+                    record: existingAttendance,
+                    alreadyMarked: true
+                };
+            } else
+            {
+                const attendanceRecord = await Attendance.create({
+                        student: student._id,
+                        matric_number: student.matric_number,
+                        attendance_date: attendanceDate,
+                        verified_at: new Date(),
+                        confidence,
+                        similarity,
+                        method: "facial_recognition"
+                });
+
+                attendance = {
+                    record: attendanceRecord,
+                    alreadyMarked: false
+                };
+            }
+        } catch (error)
+        {
+            console.error("ATTENDANCE LOG ERROR:", error.message);
+        }
+    }
+
     // -----------------------------
     // RESPONSE
     // -----------------------------
+    const durationMs = Date.now() - startedAt;
+
     return res.json({
 
         verified,
+
+        message: verified
+            ? "Student verified successfully. Attendance has been recorded."
+            : "Face did not match the selected matric number. Attendance was not recorded.",
 
         confidence,
 
         similarity,
 
         metrics: embeddingResult.metrics,
+
+        durationMs,
+
+        processing_time_ms: embeddingResult.processing_time_ms,
+
+        attendance: attendance
+            ? {
+                marked: true,
+                alreadyMarked: attendance.alreadyMarked,
+                attendance_date: attendance.record.attendance_date,
+                verified_at: attendance.record.verified_at
+            }
+            : {
+                marked: false
+            },
 
         student: {
             name: student.name,

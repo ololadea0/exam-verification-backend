@@ -1,27 +1,22 @@
 import mongoose from "mongoose";
 
-const logsSchema = new mongoose.Schema({
+const attendanceSchema = new mongoose.Schema({
     student: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Student',
-        required: true,
-    },
-    timestamp: {
-        type: Date,
-        default: Date.now,
-    },
-    status: {
-        type: String,
-        enum: ['success', 'failure'],
+        ref: "Student",
         required: true,
     },
     matric_number: {
         type: String,
         required: true,
     },
-    verified: {
-        type: Boolean,
+    attendance_date: {
+        type: String,
         required: true,
+    },
+    verified_at: {
+        type: Date,
+        default: Date.now,
     },
     confidence: {
         type: Number,
@@ -29,6 +24,7 @@ const logsSchema = new mongoose.Schema({
     },
     similarity: {
         type: Number,
+        required: true,
     },
     method: {
         type: String,
@@ -36,8 +32,11 @@ const logsSchema = new mongoose.Schema({
     },
 }, { timestamps: true });
 
-logsSchema.index({ timestamp: -1, createdAt: -1 });
-logsSchema.index({ matric_number: 1 });
-logsSchema.index({ student: 1 });
+attendanceSchema.index(
+    { student: 1, attendance_date: 1 },
+    { unique: true }
+);
+attendanceSchema.index({ matric_number: 1 });
+attendanceSchema.index({ verified_at: -1 });
 
-export default mongoose.model('Log', logsSchema);
+export default mongoose.model("Attendance", attendanceSchema);

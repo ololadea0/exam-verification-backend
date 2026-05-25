@@ -12,6 +12,6 @@ const adminRoutes = Router();
 adminRoutes.post('/register', registerAdmin);
 adminRoutes.post('/login', authAdmin);
 adminRoutes.get('/me', protect, getCurrentAdmin);
-adminRoutes.post('/logout', logoutAdmin);
+adminRoutes.post('/logout', protect, logoutAdmin);
 
 export default adminRoutes;

@@ -10,6 +10,7 @@ import adminRoutes from './routes/adminRoute.js';
 import studentRoutes from './routes/studentRoute.js';
 import verifyStudentRoutes from './routes/verifyStudentRoute.js';
 import logRoutes from './routes/logRoute.js';
+import attendanceRoutes from './routes/attendanceRoute.js';
 import errorHandler from './middleware/errormiddleware.js';
 import cookieParser from 'cookie-parser';
 
@@ -71,6 +72,7 @@ app.use('/api/admin', adminRoutes);// Admin routes
 app.use('/api/students', studentRoutes);// Student routes
 app.use('/api/verify-student', verifyStudentRoutes);// Verify student routes
 app.use('/api/logs', logRoutes);// Verification log routes
+app.use('/api/attendance', attendanceRoutes);// Attendance routes
 
 
 app.get('/health', (req, res) => {

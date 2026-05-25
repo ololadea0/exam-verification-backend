@@ -6,6 +6,11 @@ const PYTHON_URL = (
     process.env.PYTHON_SERVICE_URL || "http://localhost:8000"
 ).replace(/\/+$/, "");
 
+const PYTHON_REQUEST_TIMEOUT_MS = Number.parseInt(
+    process.env.PYTHON_REQUEST_TIMEOUT_MS || "10000",
+    10
+);
+
 const getPythonErrorMessage = (data, fallback) => {
     if (!data)
     {
@@ -56,9 +61,11 @@ export const getBestPythonEmbedding = async (base64Images) => {
 
     try
     {
-        const res = await axios.post(`${PYTHON_URL}/embed-best`, {
-            images
-        });
+        const res = await axios.post(
+            `${PYTHON_URL}/embed-best`,
+            { images },
+            { timeout: PYTHON_REQUEST_TIMEOUT_MS }
+        );
 
         if (res.data?.error || !Array.isArray(res.data?.embedding))
         {
@@ -92,9 +99,11 @@ export const getPythonEmbedding = async (base64Image) => {
 
     try
     {
-        const res = await axios.post(`${PYTHON_URL}/embed`, {
-            image
-        });
+        const res = await axios.post(
+            `${PYTHON_URL}/embed`,
+            { image },
+            { timeout: PYTHON_REQUEST_TIMEOUT_MS }
+        );
 
         if (res.data?.error || !Array.isArray(res.data?.embedding))
         {

@@ -2,6 +2,7 @@ import Admin from "../models/adminModel.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import asyncHandler from "express-async-handler";
+import { logAdminAction } from "../utils/auditLogger.js";
 
 const cookieName = "adminToken";
 
@@ -51,6 +52,13 @@ const registerAdmin = asyncHandler(async (req, res) => {
         if (admin)
         {
             sendTokenCookie(res, admin._id);
+            req.admin = admin;
+            await logAdminAction(req, {
+                action: "admin.register",
+                entity: "admin",
+                entityId: admin._id,
+                metadata: { admin_email: admin.email }
+            });
             res.status(201).json(getAdminResponse(admin));
         } else
         {
@@ -70,6 +78,13 @@ const authAdmin = asyncHandler(async (req, res) => {
     if (admin && (await bcrypt.compare(password, admin.password)))
     {
         sendTokenCookie(res, admin._id);
+        req.admin = admin;
+        await logAdminAction(req, {
+            action: "admin.login",
+            entity: "admin",
+            entityId: admin._id,
+            metadata: { admin_email: admin.email }
+        });
         res.json(getAdminResponse(admin));
     } else
     {
@@ -89,6 +104,13 @@ const getCurrentAdmin = asyncHandler(async (req, res) => {
 // @route   POST /api/admin/logout
 // @access  Private
 const logoutAdmin = asyncHandler(async (req, res) => {
+    await logAdminAction(req, {
+        action: "admin.logout",
+        entity: "admin",
+        entityId: req.admin?._id,
+        metadata: { admin_email: req.admin?.email }
+    });
+
     res.clearCookie(cookieName, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

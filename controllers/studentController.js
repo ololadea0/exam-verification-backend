@@ -3,6 +3,7 @@ import asyncHandler from "express-async-handler";
 import { encrypt, decrypt } from "../utils/encryption.js";
 import { getBestPythonEmbedding } from "../services/pythonService.js";
 import { cosineSimilarity } from "../utils/math.js";
+import { logAdminAction } from "../utils/auditLogger.js";
 
 const FACE_CAPTURE_ERROR =
     "Face capture is unclear. Ensure good lighting and one visible face.";
@@ -192,6 +193,16 @@ const registerStudent = asyncHandler(async (req, res) => {
         iv
     });
 
+    await logAdminAction(req, {
+        action: "student.register",
+        entity: "student",
+        entityId: student._id,
+        metadata: {
+            matric_number: student.matric_number,
+            department: student.department
+        }
+    });
+
     return res.status(201).json({
         message: "Student registered successfully",
         student: {
@@ -226,6 +237,20 @@ const editStudent = asyncHandler(async (req, res) => {
         },
         { new: true, runValidators: true }
     ).select(STUDENT_PUBLIC_FIELDS);
+
+    await logAdminAction(req, {
+        action: "student.update",
+        entity: "student",
+        entityId: updatedStudent._id,
+        metadata: {
+            matric_number: updatedStudent.matric_number,
+            updated_fields: Object.keys({
+                ...(name !== undefined && { name }),
+                ...(department !== undefined && { department }),
+                ...(phone_number !== undefined && { phone_number })
+            })
+        }
+    });
 
     return res.status(200).json({
         message: "Student updated successfully",
@@ -308,6 +333,15 @@ const updateStudentFace = asyncHandler(async (req, res) => {
     student.iv = iv;
     const updatedStudent = await student.save();
 
+    await logAdminAction(req, {
+        action: "student.face_update",
+        entity: "student",
+        entityId: updatedStudent._id,
+        metadata: {
+            matric_number: updatedStudent.matric_number
+        }
+    });
+
     return res.status(200).json({
         message: "Student face re-registered successfully",
         student: await getPublicStudentById(updatedStudent._id)
@@ -364,6 +398,15 @@ const deleteStudent = asyncHandler(async (req, res) => {
     }
 
     await student.deleteOne();
+
+    await logAdminAction(req, {
+        action: "student.delete",
+        entity: "student",
+        entityId: req.params.id,
+        metadata: {
+            matric_number: student.matric_number
+        }
+    });
 
     return res.status(200).json({
         message: "Student deleted successfully",
