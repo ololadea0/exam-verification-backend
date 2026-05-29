@@ -13,6 +13,7 @@ import logRoutes from './routes/logRoute.js';
 import attendanceRoutes from './routes/attendanceRoute.js';
 import errorHandler from './middleware/errormiddleware.js';
 import cookieParser from 'cookie-parser';
+import { warmUpPythonService } from './services/pythonService.js';
 
 
 dotenv.config();
@@ -89,5 +90,6 @@ app.use(errorHandler);
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}.`.green.underline);
+    warmUpPythonService();
 });
 

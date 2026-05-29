@@ -6,8 +6,15 @@ const PYTHON_URL = (
     process.env.PYTHON_SERVICE_URL || "http://localhost:8000"
 ).replace(/\/+$/, "");
 
-const PYTHON_REQUEST_TIMEOUT_MS = Number.parseInt(
-    process.env.PYTHON_REQUEST_TIMEOUT_MS || "10000",
+const PYTHON_REGISTRATION_TIMEOUT_MS = Number.parseInt(
+    process.env.PYTHON_REGISTRATION_TIMEOUT_MS || "0",
+    10
+);
+
+const PYTHON_VERIFICATION_TIMEOUT_MS = Number.parseInt(
+    process.env.PYTHON_VERIFICATION_TIMEOUT_MS ||
+    process.env.PYTHON_REQUEST_TIMEOUT_MS ||
+    "10000",
     10
 );
 
@@ -45,6 +52,20 @@ const getPythonErrorMessage = (data, fallback) => {
     return fallback;
 };
 
+export const warmUpPythonService = async () => {
+    try
+    {
+        const res = await axios.get(`${PYTHON_URL}/warmup`, {
+            timeout: PYTHON_VERIFICATION_TIMEOUT_MS
+        });
+
+        console.log("Python face service warmup complete:", res.data);
+    } catch (error)
+    {
+        console.warn("Python face service warmup skipped:", error.message);
+    }
+};
+
 export const getBestPythonEmbedding = async (base64Images) => {
     const images = Array.isArray(base64Images)
         ? base64Images
@@ -64,7 +85,7 @@ export const getBestPythonEmbedding = async (base64Images) => {
         const res = await axios.post(
             `${PYTHON_URL}/embed-best`,
             { images },
-            { timeout: PYTHON_REQUEST_TIMEOUT_MS }
+            { timeout: PYTHON_REGISTRATION_TIMEOUT_MS }
         );
 
         if (res.data?.error || !Array.isArray(res.data?.embedding))
@@ -102,7 +123,7 @@ export const getPythonEmbedding = async (base64Image) => {
         const res = await axios.post(
             `${PYTHON_URL}/embed`,
             { image },
-            { timeout: PYTHON_REQUEST_TIMEOUT_MS }
+            { timeout: PYTHON_VERIFICATION_TIMEOUT_MS }
         );
 
         if (res.data?.error || !Array.isArray(res.data?.embedding))
