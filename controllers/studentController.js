@@ -44,6 +44,7 @@ const isFaceServiceError = (msg = "") =>
 const normalizeError = (msg = "") => {
     const m = msg.toLowerCase();
 
+    if (m.includes("no usable face")) return "No usable face detected.";
     if (m.includes("no face")) return "No face detected.";
     if (m.includes("blurry")) return "Image is blurry.";
     if (m.includes("lighting")) return "Poor lighting.";

@@ -36,6 +36,11 @@ const getReadableFaceError = (message = "") => {
 
     const lower = message.toLowerCase();
 
+    if (lower.includes("no usable face"))
+    {
+        return "No usable face detected. Please retake the photo.";
+    }
+
     if (lower.includes("no face detected"))
     {
         return "No face detected. Ensure your face is fully visible.";
