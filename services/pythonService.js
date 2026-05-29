@@ -52,6 +52,19 @@ const getPythonErrorMessage = (data, fallback) => {
     return fallback;
 };
 
+const buildPythonServiceError = (error) => {
+    const message = getPythonErrorMessage(error.response?.data, error.message) ||
+        error.message;
+    const serviceError = new Error(message);
+
+    serviceError.statusCode = error.response?.status;
+    serviceError.pythonData = error.response?.data;
+    serviceError.isFaceCaptureFailure = error.response?.status === 400;
+    serviceError.isFaceServiceFailure = !error.response || error.response.status >= 500;
+
+    return serviceError;
+};
+
 export const warmUpPythonService = async () => {
     try
     {
@@ -100,10 +113,7 @@ export const getBestPythonEmbedding = async (base64Images) => {
         console.error("PYTHON ERROR:", error.message);
         console.error(error.response?.data);
 
-        throw new Error(
-            getPythonErrorMessage(error.response?.data, error.message) ||
-            error.message
-        );
+        throw buildPythonServiceError(error);
     }
 };
 
@@ -138,9 +148,6 @@ export const getPythonEmbedding = async (base64Image) => {
         console.error("PYTHON ERROR:", error.message);
         console.error(error.response?.data);
 
-        throw new Error(
-            getPythonErrorMessage(error.response?.data, error.message) ||
-            error.message
-        );
+        throw buildPythonServiceError(error);
     }
 };

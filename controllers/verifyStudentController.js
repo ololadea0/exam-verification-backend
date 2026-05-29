@@ -32,6 +32,14 @@ const isFaceServiceError = (message = "") => {
     );
 };
 
+const isPythonServiceFailure = (error) => {
+    if (error?.isFaceCaptureFailure) return false;
+    if (error?.isFaceServiceFailure) return true;
+    if (error?.statusCode >= 500) return true;
+
+    return isFaceServiceError(error?.message || "");
+};
+
 const getReadableFaceError = (message = "") => {
 
     const lower = message.toLowerCase();
@@ -135,7 +143,7 @@ const verifyStudent = asyncHandler(async (req, res) => {
 
         const rawMessage = error?.message || "";
 
-        const serviceError = isFaceServiceError(rawMessage);
+        const serviceError = isPythonServiceFailure(error);
 
         return res.status(serviceError ? 500 : 400).json({
 

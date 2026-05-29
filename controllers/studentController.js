@@ -41,6 +41,14 @@ const isFaceServiceError = (msg = "") =>
         "ENOENT"
     ].some((err) => msg.includes(err));
 
+const isPythonServiceFailure = (error) => {
+    if (error?.isFaceCaptureFailure) return false;
+    if (error?.isFaceServiceFailure) return true;
+    if (error?.statusCode >= 500) return true;
+
+    return isFaceServiceError(error?.message || "");
+};
+
 const normalizeError = (msg = "") => {
     const m = msg.toLowerCase();
 
@@ -145,7 +153,7 @@ const registerStudent = asyncHandler(async (req, res) => {
     {
 
         const msg = error?.message || "";
-        const serviceError = isFaceServiceError(msg);
+        const serviceError = isPythonServiceFailure(error);
 
         return res.status(serviceError ? 500 : 400).json({
             message: serviceError
@@ -293,7 +301,7 @@ const updateStudentFace = asyncHandler(async (req, res) => {
     {
         console.error("Student face re-registration embedding failed:", error.message);
         const msg = error?.message || "";
-        const serviceError = isFaceServiceError(msg);
+        const serviceError = isPythonServiceFailure(error);
 
         return res.status(serviceError ? 500 : 400).json({
 
