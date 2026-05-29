@@ -17,6 +17,16 @@ const getPythonErrorMessage = (data, fallback) => {
         return fallback;
     }
 
+    if (Array.isArray(data.candidates))
+    {
+        const candidateError = data.candidates.find((candidate) => candidate.error)?.error;
+
+        if (candidateError)
+        {
+            return candidateError;
+        }
+    }
+
     if (typeof data.detail === "string" && data.error)
     {
         return data.error;
@@ -30,16 +40,6 @@ const getPythonErrorMessage = (data, fallback) => {
     if (typeof data.detail === "string")
     {
         return data.detail;
-    }
-
-    if (Array.isArray(data.candidates))
-    {
-        const candidateError = data.candidates.find((candidate) => candidate.error)?.error;
-
-        if (candidateError)
-        {
-            return candidateError;
-        }
     }
 
     return fallback;

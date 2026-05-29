@@ -47,6 +47,8 @@ const normalizeError = (msg = "") => {
     if (m.includes("no face")) return "No face detected.";
     if (m.includes("blurry")) return "Image is blurry.";
     if (m.includes("lighting")) return "Poor lighting.";
+    if (m.includes("confidence")) return "Face could not be detected clearly.";
+    if (m.includes("expected") && m.includes("embedding")) return "Face model configuration mismatch.";
     if (m.includes("multiple")) return "Only one face allowed.";
     if (m.includes("small")) return "Move closer to camera.";
     if (m.includes("close")) return "Move slightly away.";

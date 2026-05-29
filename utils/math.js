@@ -1,13 +1,3 @@
-// export const euclideanDistance = (vector1, vector2) => {
-//     let sum = 0;
-//     for (let i = 0; i < vector1.length; i++)
-//     {
-//         const diff = vector1[i] - vector2[i];
-//         sum += diff * diff;
-//     }
-//     return Math.sqrt(sum);
-// };
-
 export const cosineSimilarity = (vectorA, vectorB) => {
     let dotProduct = 0;
     let magnitudeA = 0;
