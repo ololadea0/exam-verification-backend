@@ -11,7 +11,7 @@ const FACE_CAPTURE_ERROR =
 const FACE_SERVICE_ERROR =
     "Face service unavailable. Try again later.";
 
-const ENROLLMENT_DUPLICATE_THRESHOLD = 0.65;
+const ENROLLMENT_DUPLICATE_THRESHOLD = 0.85;
 const DEFAULT_PAGE_LIMIT = 25;
 const MAX_PAGE_LIMIT = 100;
 const STUDENT_PUBLIC_FIELDS = "-embedding -iv";

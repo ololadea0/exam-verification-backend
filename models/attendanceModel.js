@@ -6,6 +6,19 @@ const attendanceSchema = new mongoose.Schema({
         ref: "Student",
         required: true,
     },
+    course: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Course",
+        required: true,
+    },
+    course_code: {
+        type: String,
+        required: true,
+    },
+    course_title: {
+        type: String,
+        required: true,
+    },
     matric_number: {
         type: String,
         required: true,
@@ -33,10 +46,11 @@ const attendanceSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 attendanceSchema.index(
-    { student: 1, attendance_date: 1 },
+    { student: 1, course: 1, attendance_date: 1 },
     { unique: true }
 );
 attendanceSchema.index({ matric_number: 1 });
+attendanceSchema.index({ course_code: 1 });
 attendanceSchema.index({ verified_at: -1 });
 
 export default mongoose.model("Attendance", attendanceSchema);

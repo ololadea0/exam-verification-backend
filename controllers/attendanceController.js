@@ -18,6 +18,7 @@ const getAttendance = asyncHandler(async (req, res) => {
     const { page, limit, skip } = getPagination(req.query);
     const search = req.query.search?.trim();
     const date = req.query.date?.trim();
+    const courseId = req.query.course_id?.trim();
     const filter = {};
 
     if (search)
@@ -41,9 +42,15 @@ const getAttendance = asyncHandler(async (req, res) => {
         filter.attendance_date = date;
     }
 
+    if (courseId)
+    {
+        filter.course = courseId;
+    }
+
     const [attendance, total] = await Promise.all([
         Attendance.find(filter)
             .populate("student", "name matric_number department")
+            .populate("course", "course_code course_title")
             .sort({ verified_at: -1, createdAt: -1 })
             .skip(skip)
             .limit(limit)

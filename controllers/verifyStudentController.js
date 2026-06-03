@@ -1,7 +1,9 @@
 import asyncHandler from "express-async-handler";
+import mongoose from "mongoose";
 import Student from "../models/studentModel.js";
 import Log from "../models/logModel.js";
 import Attendance from "../models/attendanceModel.js";
+import Course from "../models/courseModel.js";
 import { decrypt } from "../utils/encryption.js";
 import { cosineSimilarity } from "../utils/math.js";
 import { getPythonEmbedding } from "../services/pythonService.js";
@@ -93,19 +95,30 @@ const getReadableFaceError = (message = "") => {
 };
 
 const getAttendanceDate = () => new Date().toISOString().slice(0, 10);
+const elapsedMs = (startedAt) => Math.round((Date.now() - startedAt) * 100) / 100;
 
 const verifyStudent = asyncHandler(async (req, res) => {
     const startedAt = Date.now();
+    const timing = {
+        database_lookup_ms: 0,
+        face_service_call_ms: 0,
+        python_processing_time_ms: 0,
+        template_decryption_ms: 0,
+        match_computation_ms: 0,
+        attendance_write_ms: 0,
+        log_write_ms: 0,
+        total_turnaround_ms: 0
+    };
 
-    const { matric_number, image } = req.body;
+    const { matric_number, image, course_id } = req.body;
 
     // -----------------------------
     // VALIDATE REQUEST
     // -----------------------------
-    if (!matric_number || !image)
+    if (!matric_number || !image || !course_id)
     {
         return res.status(400).json({
-            message: "Matric number and image are required."
+            message: "Matric number, course, and image are required."
         });
     }
 
@@ -114,14 +127,37 @@ const verifyStudent = asyncHandler(async (req, res) => {
     // -----------------------------
     // FIND STUDENT
     // -----------------------------
+    let stageStartedAt = Date.now();
     const student = await Student.findOne({
         matric_number: matric
     });
+    timing.database_lookup_ms += elapsedMs(stageStartedAt);
 
     if (!student)
     {
         return res.status(404).json({
             message: "Student not found."
+        });
+    }
+
+    if (!mongoose.isValidObjectId(course_id))
+    {
+        return res.status(400).json({
+            message: "A valid course is required."
+        });
+    }
+
+    stageStartedAt = Date.now();
+    const course = await Course.findOne({
+        _id: course_id,
+        active: true
+    });
+    timing.database_lookup_ms += elapsedMs(stageStartedAt);
+
+    if (!course)
+    {
+        return res.status(404).json({
+            message: "Course not found or inactive."
         });
     }
 
@@ -133,7 +169,10 @@ const verifyStudent = asyncHandler(async (req, res) => {
     try
     {
 
+        stageStartedAt = Date.now();
         embeddingResult = await getPythonEmbedding(image);
+        timing.face_service_call_ms = elapsedMs(stageStartedAt);
+        timing.python_processing_time_ms = embeddingResult.processing_time_ms || 0;
 
     } catch (error)
     {
@@ -211,9 +250,11 @@ const verifyStudent = asyncHandler(async (req, res) => {
     try
     {
 
+        stageStartedAt = Date.now();
         storedEmbedding = JSON.parse(
             decrypt(student.embedding, student.iv)
         );
+        timing.template_decryption_ms = elapsedMs(stageStartedAt);
 
     } catch (error)
     {
@@ -243,10 +284,12 @@ const verifyStudent = asyncHandler(async (req, res) => {
     // -----------------------------
     // MAIN SIMILARITY
     // -----------------------------
+    stageStartedAt = Date.now();
     const similarity = cosineSimilarity(
         storedEmbedding,
         liveEmbedding
     );
+    timing.match_computation_ms = elapsedMs(stageStartedAt);
 
     // -----------------------------
     // FINAL MATCH DECISION
@@ -256,36 +299,15 @@ const verifyStudent = asyncHandler(async (req, res) => {
     const confidence = Math.max(0, similarity);
     let attendance = null;
 
-    // -----------------------------
-    // LOG ATTEMPT
-    // -----------------------------
-    try
-    {
-
-        await Log.create({
-            student: student._id,
-            timestamp: new Date(),
-            status: verified ? "success" : "failure",
-            matric_number: student.matric_number,
-            verified,
-            confidence,
-            similarity,
-            method: "facial_recognition"
-        });
-
-    } catch (error)
-    {
-
-        console.error("LOG ERROR:", error.message);
-    }
-
     if (verified)
     {
         try
         {
+            stageStartedAt = Date.now();
             const attendanceDate = getAttendanceDate();
             const existingAttendance = await Attendance.findOne({
                 student: student._id,
+                course: course._id,
                 attendance_date: attendanceDate
             });
 
@@ -299,6 +321,9 @@ const verifyStudent = asyncHandler(async (req, res) => {
             {
                 const attendanceRecord = await Attendance.create({
                         student: student._id,
+                        course: course._id,
+                        course_code: course.course_code,
+                        course_title: course.course_title,
                         matric_number: student.matric_number,
                         attendance_date: attendanceDate,
                         verified_at: new Date(),
@@ -312,6 +337,7 @@ const verifyStudent = asyncHandler(async (req, res) => {
                     alreadyMarked: false
                 };
             }
+            timing.attendance_write_ms = elapsedMs(stageStartedAt);
         } catch (error)
         {
             console.error("ATTENDANCE LOG ERROR:", error.message);
@@ -321,7 +347,33 @@ const verifyStudent = asyncHandler(async (req, res) => {
     // -----------------------------
     // RESPONSE
     // -----------------------------
-    const durationMs = Date.now() - startedAt;
+    timing.total_turnaround_ms = Date.now() - startedAt;
+
+    try
+    {
+        stageStartedAt = Date.now();
+        const log = await Log.create({
+            student: student._id,
+            course: course._id,
+            course_code: course.course_code,
+            course_title: course.course_title,
+            timestamp: new Date(),
+            status: verified ? "success" : "failure",
+            matric_number: student.matric_number,
+            verified,
+            confidence,
+            similarity,
+            method: "facial_recognition",
+            timing
+        });
+        timing.log_write_ms = elapsedMs(stageStartedAt);
+        timing.total_turnaround_ms = Date.now() - startedAt;
+        log.timing = timing;
+        await log.save();
+    } catch (error)
+    {
+        console.error("LOG ERROR:", error.message);
+    }
 
     return res.json({
 
@@ -337,9 +389,11 @@ const verifyStudent = asyncHandler(async (req, res) => {
 
         metrics: embeddingResult.metrics,
 
-        durationMs,
+        durationMs: timing.total_turnaround_ms,
 
         processing_time_ms: embeddingResult.processing_time_ms,
+
+        timing,
 
         attendance: attendance
             ? {
@@ -357,6 +411,12 @@ const verifyStudent = asyncHandler(async (req, res) => {
             matric_number: student.matric_number,
             department: student.department,
             phone_number: student.phone_number
+        },
+
+        course: {
+            _id: course._id,
+            course_code: course.course_code,
+            course_title: course.course_title
         }
     });
 });

@@ -11,6 +11,8 @@ import studentRoutes from './routes/studentRoute.js';
 import verifyStudentRoutes from './routes/verifyStudentRoute.js';
 import logRoutes from './routes/logRoute.js';
 import attendanceRoutes from './routes/attendanceRoute.js';
+import courseRoutes from './routes/courseRoute.js';
+import auditLogRoutes from './routes/auditLogRoute.js';
 import errorHandler from './middleware/errormiddleware.js';
 import cookieParser from 'cookie-parser';
 import { warmUpPythonService } from './services/pythonService.js';
@@ -74,6 +76,8 @@ app.use('/api/students', studentRoutes);// Student routes
 app.use('/api/verify-student', verifyStudentRoutes);// Verify student routes
 app.use('/api/logs', logRoutes);// Verification log routes
 app.use('/api/attendance', attendanceRoutes);// Attendance routes
+app.use('/api/courses', courseRoutes);// Course routes
+app.use('/api/audit-logs', auditLogRoutes);// Admin audit trail routes
 
 
 app.get('/health', (req, res) => {
