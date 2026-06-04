@@ -11,7 +11,9 @@ const FACE_CAPTURE_ERROR =
 const FACE_SERVICE_ERROR =
     "Face service unavailable. Try again later.";
 
-const ENROLLMENT_DUPLICATE_THRESHOLD = 0.85;
+const ENROLLMENT_DUPLICATE_THRESHOLD = Number.parseFloat(
+    process.env.ENROLLMENT_DUPLICATE_THRESHOLD || "0.78"
+);
 const DEFAULT_PAGE_LIMIT = 25;
 const MAX_PAGE_LIMIT = 100;
 const STUDENT_PUBLIC_FIELDS = "-embedding -iv";
@@ -67,6 +69,9 @@ const normalizeError = (msg = "") => {
 
 const getPublicStudentById = (studentId) =>
     Student.findById(studentId).select(STUDENT_PUBLIC_FIELDS);
+
+const formatSimilarityPercent = (similarity) =>
+    `${Math.round(Math.max(0, similarity) * 100)}%`;
 
 const findMatchingFaceStudent = async (embedding, excludedStudentId = null) => {
     const students = await Student.find({}, "name matric_number embedding iv");
@@ -159,6 +164,10 @@ const registerStudent = asyncHandler(async (req, res) => {
             message: serviceError
                 ? FACE_SERVICE_ERROR
                 : normalizeError(msg),
+            details:
+                process.env.NODE_ENV !== "production"
+                    ? msg
+                    : undefined,
             debug:
                 process.env.NODE_ENV !== "production"
                     ? msg
@@ -180,7 +189,7 @@ const registerStudent = asyncHandler(async (req, res) => {
     if (matchingFace)
     {
         return res.status(409).json({
-            message: `Face already registered for ${matchingFace.student.name}`,
+            message: `Face already registered for ${matchingFace.student.name} (${formatSimilarityPercent(matchingFace.similarity)} match).`,
             matchedStudent: {
                 name: matchingFace.student.name,
                 matric_number: matchingFace.student.matric_number
@@ -305,9 +314,10 @@ const updateStudentFace = asyncHandler(async (req, res) => {
                 ? FACE_SERVICE_ERROR
                 : normalizeError(msg),
 
-            details: serviceError
-                ? undefined
-                : msg
+            details:
+                process.env.NODE_ENV !== "production" || !serviceError
+                    ? msg
+                    : undefined
         });
     }
 
@@ -323,7 +333,7 @@ const updateStudentFace = asyncHandler(async (req, res) => {
     if (matchingFace)
     {
         return res.status(409).json({
-            message: `This face is already enrolled for ${matchingFace.student.name} (${matchingFace.student.matric_number}).`,
+            message: `This face is already enrolled for ${matchingFace.student.name} (${matchingFace.student.matric_number}) with a ${formatSimilarityPercent(matchingFace.similarity)} match.`,
             matchedStudent: {
                 name: matchingFace.student.name,
                 matric_number: matchingFace.student.matric_number

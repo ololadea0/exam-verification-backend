@@ -18,6 +18,11 @@ const PYTHON_VERIFICATION_TIMEOUT_MS = Number.parseInt(
     10
 );
 
+const PYTHON_WARMUP_TIMEOUT_MS = Number.parseInt(
+    process.env.PYTHON_WARMUP_TIMEOUT_MS || "60000",
+    10
+);
+
 const getPythonErrorMessage = (data, fallback) => {
     if (!data)
     {
@@ -69,7 +74,7 @@ export const warmUpPythonService = async () => {
     try
     {
         const res = await axios.get(`${PYTHON_URL}/warmup`, {
-            timeout: PYTHON_VERIFICATION_TIMEOUT_MS
+            timeout: PYTHON_WARMUP_TIMEOUT_MS
         });
 
         console.log("Python face service warmup complete:", res.data);
@@ -117,7 +122,10 @@ export const getBestPythonEmbedding = async (base64Images) => {
     }
 };
 
-export const getPythonEmbedding = async (base64Image) => {
+export const getPythonEmbedding = async (
+    base64Image,
+    timeoutMs = PYTHON_VERIFICATION_TIMEOUT_MS
+) => {
     const image = Array.isArray(base64Image)
         ? base64Image[0]
         : base64Image;
@@ -133,7 +141,7 @@ export const getPythonEmbedding = async (base64Image) => {
         const res = await axios.post(
             `${PYTHON_URL}/embed`,
             { image },
-            { timeout: PYTHON_VERIFICATION_TIMEOUT_MS }
+            { timeout: timeoutMs }
         );
 
         if (res.data?.error || !Array.isArray(res.data?.embedding))

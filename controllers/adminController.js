@@ -5,11 +5,12 @@ import asyncHandler from "express-async-handler";
 import { logAdminAction } from "../utils/auditLogger.js";
 
 const cookieName = "adminToken";
+const isProduction = process.env.NODE_ENV === "production";
 
 const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "none",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     maxAge: 30 * 24 * 60 * 60 * 1000
 };
 
@@ -113,8 +114,8 @@ const logoutAdmin = asyncHandler(async (req, res) => {
 
     res.clearCookie(cookieName, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "none"
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax"
     });
 
     res.json({ message: "Logged out successfully" });

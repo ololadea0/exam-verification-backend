@@ -8,7 +8,9 @@ import { decrypt } from "../utils/encryption.js";
 import { cosineSimilarity } from "../utils/math.js";
 import { getPythonEmbedding } from "../services/pythonService.js";
 
-const SIMILARITY_THRESHOLD = 0.65;
+const SIMILARITY_THRESHOLD = Number.parseFloat(
+    process.env.VERIFICATION_MATCH_THRESHOLD || "0.82"
+);
 const MAX_VERIFICATION_TIME_MS = Number.parseInt(
     process.env.MAX_VERIFICATION_TIME_MS || "10000",
     10
@@ -96,12 +98,23 @@ const getReadableFaceError = (message = "") => {
 
 const getAttendanceDate = () => new Date().toISOString().slice(0, 10);
 const elapsedMs = (startedAt) => Math.round((Date.now() - startedAt) * 100) / 100;
+const remainingVerificationMs = (startedAt) =>
+    Math.max(0, MAX_VERIFICATION_TIME_MS - (Date.now() - startedAt));
+
+const getVerificationTimeoutResponse = (startedAt) => ({
+    message: "Verification exceeded the 10-second processing limit. Please try again.",
+    durationMs: Date.now() - startedAt,
+    maxDurationMs: MAX_VERIFICATION_TIME_MS
+});
 
 const verifyStudent = asyncHandler(async (req, res) => {
     const startedAt = Date.now();
     const timing = {
         database_lookup_ms: 0,
         face_service_call_ms: 0,
+        face_detection_ms: 0,
+        feature_extraction_ms: 0,
+        embedding_generation_ms: 0,
         python_processing_time_ms: 0,
         template_decryption_ms: 0,
         match_computation_ms: 0,
@@ -170,8 +183,18 @@ const verifyStudent = asyncHandler(async (req, res) => {
     {
 
         stageStartedAt = Date.now();
-        embeddingResult = await getPythonEmbedding(image);
+        const remainingMs = remainingVerificationMs(startedAt);
+
+        if (remainingMs <= 0)
+        {
+            return res.status(504).json(getVerificationTimeoutResponse(startedAt));
+        }
+
+        embeddingResult = await getPythonEmbedding(image, remainingMs);
         timing.face_service_call_ms = elapsedMs(stageStartedAt);
+        timing.face_detection_ms = embeddingResult.metrics?.face_detection_ms || 0;
+        timing.feature_extraction_ms = embeddingResult.metrics?.feature_extraction_ms || 0;
+        timing.embedding_generation_ms = embeddingResult.metrics?.embedding_generation_ms || 0;
         timing.python_processing_time_ms = embeddingResult.processing_time_ms || 0;
 
     } catch (error)
@@ -189,6 +212,11 @@ const verifyStudent = asyncHandler(async (req, res) => {
             message: serviceError
                 ? FACE_SERVICE_ERROR
                 : getReadableFaceError(rawMessage),
+
+            details:
+                process.env.NODE_ENV !== "production"
+                    ? rawMessage
+                    : undefined,
 
             debug:
                 process.env.NODE_ENV !== "production"
@@ -224,10 +252,7 @@ const verifyStudent = asyncHandler(async (req, res) => {
 
     if (elapsedAfterEmbedding > MAX_VERIFICATION_TIME_MS)
     {
-        return res.status(504).json({
-            message: "Verification exceeded the allowed processing time. Please try again.",
-            durationMs: elapsedAfterEmbedding
-        });
+        return res.status(504).json(getVerificationTimeoutResponse(startedAt));
     }
 
     // -----------------------------
@@ -299,6 +324,11 @@ const verifyStudent = asyncHandler(async (req, res) => {
     const confidence = Math.max(0, similarity);
     let attendance = null;
 
+    if (Date.now() - startedAt > MAX_VERIFICATION_TIME_MS)
+    {
+        return res.status(504).json(getVerificationTimeoutResponse(startedAt));
+    }
+
     if (verified)
     {
         try
@@ -320,16 +350,16 @@ const verifyStudent = asyncHandler(async (req, res) => {
             } else
             {
                 const attendanceRecord = await Attendance.create({
-                        student: student._id,
-                        course: course._id,
-                        course_code: course.course_code,
-                        course_title: course.course_title,
-                        matric_number: student.matric_number,
-                        attendance_date: attendanceDate,
-                        verified_at: new Date(),
-                        confidence,
-                        similarity,
-                        method: "facial_recognition"
+                    student: student._id,
+                    course: course._id,
+                    course_code: course.course_code,
+                    course_title: course.course_title,
+                    matric_number: student.matric_number,
+                    attendance_date: attendanceDate,
+                    verified_at: new Date(),
+                    confidence,
+                    similarity,
+                    method: "facial_recognition"
                 });
 
                 attendance = {

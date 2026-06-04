@@ -38,6 +38,10 @@ if (process.env.MONGO_URI)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const port = process.env.PORT || 8000;
+const pythonWarmupIntervalMs = Number.parseInt(
+    process.env.PYTHON_WARMUP_INTERVAL_MS || "300000",
+    10
+);
 
 const app = express();
 
@@ -95,5 +99,14 @@ app.use(errorHandler);
 app.listen(port, () => {
     console.log(`Server is running on port ${port}.`.green.underline);
     warmUpPythonService();
+
+    if (pythonWarmupIntervalMs > 0)
+    {
+        const warmupInterval = setInterval(
+            warmUpPythonService,
+            pythonWarmupIntervalMs
+        );
+        warmupInterval.unref?.();
+    }
 });
 

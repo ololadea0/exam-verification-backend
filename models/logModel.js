@@ -50,6 +50,9 @@ const logsSchema = new mongoose.Schema({
     timing: {
         database_lookup_ms: Number,
         face_service_call_ms: Number,
+        face_detection_ms: Number,
+        feature_extraction_ms: Number,
+        embedding_generation_ms: Number,
         python_processing_time_ms: Number,
         template_decryption_ms: Number,
         match_computation_ms: Number,
