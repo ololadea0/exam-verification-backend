@@ -409,8 +409,7 @@ const verifyStudent = asyncHandler(async (req, res) => {
         student: {
             name: student.name,
             matric_number: student.matric_number,
-            department: student.department,
-            phone_number: student.phone_number
+            department: student.department
         },
 
         course: {

@@ -115,7 +115,7 @@ const findMatchingFaceStudent = async (embedding, excludedStudentId = null) => {
 // ------------------------------
 const registerStudent = asyncHandler(async (req, res) => {
 
-    const { name, matric_number, department, image, images, phone_number } = req.body;
+    const { name, matric_number, department, image, images } = req.body;
 
     const captureImages =
         Array.isArray(images) && images.length > 0
@@ -199,7 +199,6 @@ const registerStudent = asyncHandler(async (req, res) => {
         name,
         matric_number: matric,
         department,
-        phone_number,
         embedding: encryptedEmbedding,
         iv
     });
@@ -220,8 +219,7 @@ const registerStudent = asyncHandler(async (req, res) => {
             _id: student._id,
             name: student.name,
             matric_number: student.matric_number,
-            department: student.department,
-            phone_number: student.phone_number
+            department: student.department
         }
     });
 });
@@ -237,14 +235,13 @@ const editStudent = asyncHandler(async (req, res) => {
         return res.status(404).json({ message: "Student not found" });
     }
 
-    const { name, department, phone_number } = req.body;
+    const { name, department } = req.body;
 
     const updatedStudent = await Student.findByIdAndUpdate(
         req.params.id,
         {
             ...(name !== undefined && { name }),
-            ...(department !== undefined && { department }),
-            ...(phone_number !== undefined && { phone_number })
+            ...(department !== undefined && { department })
         },
         { new: true, runValidators: true }
     ).select(STUDENT_PUBLIC_FIELDS);
@@ -257,8 +254,7 @@ const editStudent = asyncHandler(async (req, res) => {
             matric_number: updatedStudent.matric_number,
             updated_fields: Object.keys({
                 ...(name !== undefined && { name }),
-                ...(department !== undefined && { department }),
-                ...(phone_number !== undefined && { phone_number })
+                ...(department !== undefined && { department })
             })
         }
     });
@@ -370,8 +366,7 @@ const getStudents = asyncHandler(async (req, res) => {
             $or: [
                 { name: { $regex: search, $options: "i" } },
                 { matric_number: { $regex: search, $options: "i" } },
-                { department: { $regex: search, $options: "i" } },
-                { phone_number: { $regex: search, $options: "i" } }
+                { department: { $regex: search, $options: "i" } }
             ]
         }
         : {};

@@ -16,10 +16,6 @@ const studentSchema = new mongoose.Schema({
         required: true,
     },
 
-    phone_number: {
-        type: String,
-        required: true,
-    },
     embedding: { // store the student's facial embeddings as an array of numbers
         type: String, // we can store the embeddings as a JSON string
         required: true,

@@ -24,7 +24,6 @@ const courseSchema = new mongoose.Schema({
     },
 }, { timestamps: true });
 
-courseSchema.index({ course_code: 1 });
 courseSchema.index({ active: 1, course_code: 1 });
 
 export default mongoose.model("Course", courseSchema);
