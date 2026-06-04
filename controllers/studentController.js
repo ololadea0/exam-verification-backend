@@ -23,6 +23,8 @@ const hasValidIv = (iv) =>
     iv.length === 32 &&
     /^[a-fA-F0-9]+$/.test(iv);
 
+const elapsedMs = (startedAt) => Math.round((Date.now() - startedAt) * 100) / 100;
+
 
 const getPagination = (query) => {
     const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
@@ -119,6 +121,20 @@ const findMatchingFaceStudent = async (embedding, excludedStudentId = null) => {
 // MAIN REGISTER
 // ------------------------------
 const registerStudent = asyncHandler(async (req, res) => {
+    const startedAt = Date.now();
+    const timing = {
+        duplicate_matric_lookup_ms: 0,
+        face_service_call_ms: 0,
+        face_detection_ms: 0,
+        feature_extraction_ms: 0,
+        embedding_generation_ms: 0,
+        python_processing_time_ms: 0,
+        duplicate_face_lookup_and_match_ms: 0,
+        embedding_encryption_ms: 0,
+        database_write_ms: 0,
+        audit_log_write_ms: 0,
+        total_registration_ms: 0
+    };
 
     const { name, matric_number, department, image, images } = req.body;
 
@@ -136,7 +152,9 @@ const registerStudent = asyncHandler(async (req, res) => {
 
     const matric = matric_number.trim();
 
+    let stageStartedAt = Date.now();
     const exists = await Student.findOne({ matric_number: matric });
+    timing.duplicate_matric_lookup_ms = elapsedMs(stageStartedAt);
 
     if (exists)
     {
@@ -152,7 +170,13 @@ const registerStudent = asyncHandler(async (req, res) => {
 
     try
     {
+        stageStartedAt = Date.now();
         result = await getBestPythonEmbedding(captureImages);
+        timing.face_service_call_ms = elapsedMs(stageStartedAt);
+        timing.face_detection_ms = result.metrics?.face_detection_ms || 0;
+        timing.feature_extraction_ms = result.metrics?.feature_extraction_ms || 0;
+        timing.embedding_generation_ms = result.metrics?.embedding_generation_ms || 0;
+        timing.python_processing_time_ms = result.processing_time_ms || 0;
 
     } catch (error)
     {
@@ -184,7 +208,9 @@ const registerStudent = asyncHandler(async (req, res) => {
         });
     }
 
+    stageStartedAt = Date.now();
     const matchingFace = await findMatchingFaceStudent(embedding);
+    timing.duplicate_face_lookup_and_match_ms = elapsedMs(stageStartedAt);
 
     if (matchingFace)
     {
@@ -201,9 +227,12 @@ const registerStudent = asyncHandler(async (req, res) => {
     // ------------------------------
     // SAVE NEW STUDENT
     // ------------------------------
+    stageStartedAt = Date.now();
     const { encryptedEmbedding, iv } =
         encrypt(JSON.stringify(embedding));
+    timing.embedding_encryption_ms = elapsedMs(stageStartedAt);
 
+    stageStartedAt = Date.now();
     const student = await Student.create({
         name,
         matric_number: matric,
@@ -211,19 +240,30 @@ const registerStudent = asyncHandler(async (req, res) => {
         embedding: encryptedEmbedding,
         iv
     });
+    timing.database_write_ms = elapsedMs(stageStartedAt);
 
+    timing.total_registration_ms = Date.now() - startedAt;
+
+    stageStartedAt = Date.now();
     await logAdminAction(req, {
         action: "student.register",
         entity: "student",
         entityId: student._id,
         metadata: {
             matric_number: student.matric_number,
-            department: student.department
+            department: student.department,
+            timing
         }
     });
+    timing.audit_log_write_ms = elapsedMs(stageStartedAt);
+    timing.total_registration_ms = Date.now() - startedAt;
 
     return res.status(201).json({
         message: "Student registered successfully",
+        durationMs: timing.total_registration_ms,
+        processing_time_ms: result.processing_time_ms,
+        metrics: result.metrics,
+        timing,
         student: {
             _id: student._id,
             name: student.name,
