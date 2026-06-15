@@ -88,6 +88,11 @@ const getReadableFaceError = (message = "") => {
         return "Only one face should appear in the frame.";
     }
 
+    if (lower.includes("detail") || lower.includes("contrast"))
+    {
+        return "Face detail is too low. Retake the photo with clearer focus.";
+    }
+
     if (lower.includes("invalid image"))
     {
         return "Captured image is invalid.";
