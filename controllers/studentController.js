@@ -15,7 +15,7 @@ const ENROLLMENT_DUPLICATE_THRESHOLD = Number.parseFloat(
     process.env.ENROLLMENT_DUPLICATE_THRESHOLD || "0.97"
 );
 const ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD = Number.parseFloat(
-    process.env.ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD || "0.90"
+    process.env.ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD || "0.82"
 );
 const DEFAULT_PAGE_LIMIT = 25;
 const MAX_PAGE_LIMIT = 100;
@@ -87,6 +87,20 @@ const getDuplicateMatchPayload = (match) => ({
     threshold: ENROLLMENT_DUPLICATE_THRESHOLD,
     reviewThreshold: ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD
 });
+
+const getDuplicateStatus = (similarity) => {
+    if (similarity >= ENROLLMENT_DUPLICATE_THRESHOLD)
+    {
+        return "confirmed_duplicate";
+    }
+
+    if (similarity >= ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD)
+    {
+        return "possible_duplicate";
+    }
+
+    return null;
+};
 
 const findClosestFaceStudent = async (embedding, excludedStudentId = null) => {
     const students = await Student.find({}, "name matric_number embedding iv");
@@ -223,18 +237,21 @@ const registerStudent = asyncHandler(async (req, res) => {
     const matchingFace = await findClosestFaceStudent(embedding);
     timing.duplicate_face_lookup_and_match_ms = elapsedMs(stageStartedAt);
 
-    if (matchingFace?.similarity >= ENROLLMENT_DUPLICATE_THRESHOLD)
+    const duplicateStatus = matchingFace
+        ? getDuplicateStatus(matchingFace.similarity)
+        : null;
+
+    if (duplicateStatus)
     {
         return res.status(409).json({
-            message: `Face already registered for ${matchingFace.student.name} (${formatSimilarityPercent(matchingFace.similarity)} match).`,
+            message:
+                duplicateStatus === "confirmed_duplicate"
+                    ? `Face already registered for ${matchingFace.student.name} (${formatSimilarityPercent(matchingFace.similarity)} match).`
+                    : `Possible duplicate face detected for ${matchingFace.student.name} (${formatSimilarityPercent(matchingFace.similarity)} match). Registration was not saved.`,
+            duplicateStatus,
             ...getDuplicateMatchPayload(matchingFace)
         });
     }
-
-    const possibleDuplicate =
-        matchingFace?.similarity >= ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD
-            ? getDuplicateMatchPayload(matchingFace)
-            : null;
 
     // ------------------------------
     // SAVE NEW STUDENT
@@ -264,7 +281,6 @@ const registerStudent = asyncHandler(async (req, res) => {
         metadata: {
             matric_number: student.matric_number,
             department: student.department,
-            possibleDuplicate,
             timing
         }
     });
@@ -276,7 +292,6 @@ const registerStudent = asyncHandler(async (req, res) => {
         durationMs: timing.total_registration_ms,
         processing_time_ms: result.processing_time_ms,
         metrics: result.metrics,
-        possibleDuplicate,
         timing,
         student: {
             _id: student._id,
@@ -384,18 +399,21 @@ const updateStudentFace = asyncHandler(async (req, res) => {
 
     const matchingFace = await findClosestFaceStudent(result.embedding, student._id);
 
-    if (matchingFace?.similarity >= ENROLLMENT_DUPLICATE_THRESHOLD)
+    const duplicateStatus = matchingFace
+        ? getDuplicateStatus(matchingFace.similarity)
+        : null;
+
+    if (duplicateStatus)
     {
         return res.status(409).json({
-            message: `This face is already enrolled for ${matchingFace.student.name} (${matchingFace.student.matric_number}) with a ${formatSimilarityPercent(matchingFace.similarity)} match.`,
+            message:
+                duplicateStatus === "confirmed_duplicate"
+                    ? `This face is already enrolled for ${matchingFace.student.name} (${matchingFace.student.matric_number}) with a ${formatSimilarityPercent(matchingFace.similarity)} match.`
+                    : `Possible duplicate face detected for ${matchingFace.student.name} (${matchingFace.student.matric_number}) with a ${formatSimilarityPercent(matchingFace.similarity)} match. Face re-registration was not saved.`,
+            duplicateStatus,
             ...getDuplicateMatchPayload(matchingFace)
         });
     }
-
-    const possibleDuplicate =
-        matchingFace?.similarity >= ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD
-            ? getDuplicateMatchPayload(matchingFace)
-            : null;
 
     const { encryptedEmbedding, iv } = encrypt(
         JSON.stringify(result.embedding)
@@ -410,14 +428,12 @@ const updateStudentFace = asyncHandler(async (req, res) => {
         entity: "student",
         entityId: updatedStudent._id,
         metadata: {
-            matric_number: updatedStudent.matric_number,
-            possibleDuplicate
+            matric_number: updatedStudent.matric_number
         }
     });
 
     return res.status(200).json({
         message: "Student face re-registered successfully",
-        possibleDuplicate,
         student: await getPublicStudentById(updatedStudent._id)
     });
 });
