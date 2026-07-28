@@ -12,10 +12,10 @@ const FACE_SERVICE_ERROR =
     "Face service unavailable. Try again later.";
 
 const ENROLLMENT_DUPLICATE_THRESHOLD = Number.parseFloat(
-    process.env.ENROLLMENT_DUPLICATE_THRESHOLD || "0.97"
+    process.env.ENROLLMENT_DUPLICATE_THRESHOLD || "0.80"
 );
 const ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD = Number.parseFloat(
-    process.env.ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD || "0.82"
+    process.env.ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD || "0.80"
 );
 const DEFAULT_PAGE_LIMIT = 25;
 const MAX_PAGE_LIMIT = 100;
