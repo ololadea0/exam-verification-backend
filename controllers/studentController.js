@@ -14,9 +14,7 @@ const FACE_SERVICE_ERROR =
 const ENROLLMENT_DUPLICATE_THRESHOLD = Number.parseFloat(
     process.env.ENROLLMENT_DUPLICATE_THRESHOLD || "0.80"
 );
-const ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD = Number.parseFloat(
-    process.env.ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD || "0.80"
-);
+
 const DEFAULT_PAGE_LIMIT = 25;
 const MAX_PAGE_LIMIT = 100;
 const STUDENT_PUBLIC_FIELDS = "-embedding -iv";
@@ -78,14 +76,17 @@ const getPublicStudentById = (studentId) =>
 const formatSimilarityPercent = (similarity) =>
     `${Math.round(Math.max(0, similarity) * 100)}%`;
 
+
+
 const getDuplicateMatchPayload = (match) => ({
+
     matchedStudent: {
         name: match.student.name,
         matric_number: match.student.matric_number
     },
     similarity: match.similarity,
     threshold: ENROLLMENT_DUPLICATE_THRESHOLD,
-    reviewThreshold: ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD
+
 });
 
 const getDuplicateStatus = (similarity) => {
@@ -94,10 +95,6 @@ const getDuplicateStatus = (similarity) => {
         return "confirmed_duplicate";
     }
 
-    if (similarity >= ENROLLMENT_DUPLICATE_REVIEW_THRESHOLD)
-    {
-        return "possible_duplicate";
-    }
 
     return null;
 };

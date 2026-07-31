@@ -12,6 +12,7 @@ const protect = asyncHandler(async (req, res, next) => {
         });
     }
 
+
     try
     {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -34,6 +35,9 @@ const protect = asyncHandler(async (req, res, next) => {
             message: "Not authorized, session failed"
         });
     }
+    console.log("Origin:", req.headers.origin);
+    console.log("Cookie header:", req.headers.cookie);
+    console.log("Parsed cookies:", req.cookies);
 });
 
 export { protect };

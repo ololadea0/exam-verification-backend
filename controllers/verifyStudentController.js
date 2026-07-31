@@ -9,7 +9,7 @@ import { cosineSimilarity } from "../utils/math.js";
 import { getPythonEmbedding } from "../services/pythonService.js";
 
 const SIMILARITY_THRESHOLD = Number.parseFloat(
-    process.env.VERIFICATION_MATCH_THRESHOLD || "0.65"
+    process.env.VERIFICATION_MATCH_THRESHOLD
 );
 const MAX_VERIFICATION_TIME_MS = Number.parseInt(
     process.env.MAX_VERIFICATION_TIME_MS || "10000",
