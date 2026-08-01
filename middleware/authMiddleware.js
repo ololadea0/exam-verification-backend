@@ -7,9 +7,10 @@ const protect = asyncHandler(async (req, res, next) => {
 
     console.log("=== PROTECT ===");
     console.log("URL:", req.originalUrl);
-    console.log("Method:", req.method);
-    console.log("Token exists:", !!token);
-
+    console.log("Origin:", req.headers.origin);
+    console.log("User-Agent:", req.headers["user-agent"]);
+    console.log("Cookie:", req.headers.cookie);
+    console.log("Token exists:", !!req.cookies?.adminToken);
     if (!token)
     {
         console.log("❌ NO TOKEN");
